@@ -1,0 +1,537 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+//class Using_Stair
+//{
+//    int stair
+//}
+
+public class Move_Ctrl : MonoBehaviour
+{
+    [Header("계단(x) & 바닥(y) 위치 [pixel]")]
+    //층별 Y값
+    public float[] stage_Floor = new float[] {
+        0
+    };
+    //계단의 윗부분 X값
+    public Vector2[] stair_Up_V = new Vector2[]{
+
+    };
+    //계단의 아랫부분 X값
+    public Vector2[] stair_Down_V = new Vector2[]{
+
+    };
+
+    private int point_Stair = 0;
+    //[Header("이동 속도")]
+    [HideInInspector] public float move_Speed_Walk = 100;
+    [HideInInspector] public float move_Speed_Run = 200;
+    [Header("맵 이동 제한")]
+    public float map_Max_X;
+    public float map_Min_X;
+    //public float map_Max_Y;
+    public float map_Min_Y;
+
+    private float point_X;
+    private bool isWall = false;
+    private bool trigger = false;
+    private GameObject coll_Obj;
+    private Animator body_Anim;
+    private int[] BlockingAIText = { 8 };
+    private float m, x, y;
+    [HideInInspector] public bool isUpStair = false;
+    [HideInInspector] public bool isDownStair = false;
+    [HideInInspector] public bool isMove = false;
+
+    private float moveCtrl_Point;
+    public GameObject Pointer;
+
+    private void Start()
+    {
+        body_Anim = this.transform.Find("Body").GetComponent<Animator>();
+    }
+    
+    //마우스 위치값과 시체 운반여부를 변수로 가지는 이동 메소드
+    public void moveCtrl(Vector2 move_Point, bool isCarry)
+    {
+        //모든 변수값 초기화
+        StopAllCoroutines();
+        moveCtrl_Point = move_Point.x;
+        isUpStair = false;
+        isDownStair = false;
+        isMove = true;
+        SoundManager.instance.MoveStart(); // 사운드 발생
+        body_Anim = this.transform.Find("Body").GetComponent<Animator>();
+        body_Anim.SetBool("isStop", false);
+        body_Anim.SetBool("isMove", true);
+
+        point_X = move_Point.x;
+        
+        //맵 밖을 클릭시 
+        if (move_Point.y < 0)
+        {
+            StopMove();
+            SoundManager.instance.MoveStop(); // 사운드 발생
+        }
+
+        //층별 Y값 
+        else
+        {
+            //4층 누를 때
+            if (stage_Floor.Length >= 5 && move_Point.y >= stage_Floor[4] - 26)
+            {
+                point_Stair = 4;
+                Pointer.transform.position = new Vector2(move_Point.x, stage_Floor[4] - 13);
+                Pointer.SetActive(true);
+                StartCoroutine(Move(point_X, point_Stair));
+            }
+
+            //3층 누를 때
+            else if (stage_Floor.Length >= 4 && move_Point.y >= stage_Floor[3] - 26)
+            {
+                point_Stair = 3;
+                Pointer.transform.position = new Vector2(move_Point.x, stage_Floor[3] - 13);
+                Pointer.SetActive(true);
+                StartCoroutine(Move(point_X, point_Stair));
+            }
+
+            //2층 누를 때
+            else if (stage_Floor.Length >= 3 && move_Point.y >= stage_Floor[2] - 26)
+            {
+                point_Stair = 2;
+                Pointer.transform.position = new Vector2(move_Point.x, stage_Floor[2] - 13);
+                Pointer.SetActive(true);
+                StartCoroutine(Move(point_X, point_Stair));
+            }
+
+            //1층 누를때
+            else if (stage_Floor.Length >= 2 /*&& move_Point.y < stage_Floor[1] - 26*/)
+            {
+                point_Stair = 1;
+                Pointer.transform.position = new Vector2(move_Point.x, stage_Floor[1] - 13);
+                Pointer.SetActive(true);
+                StartCoroutine(Move(point_X, point_Stair));
+            }
+        }
+    }
+
+    
+    IEnumerator Move(float move_X, int move_Stair)
+    {
+        int ch_Stair = 0; //현재 캐릭터의 위치
+        bool stair = false;
+        int stair_Floor = 0; //플레이어가 사용중인 계단 위치
+        int nearUp = -1;
+        int nearDown = -1;
+        
+        //계단 처리를 위해 현재 캐릭터가 몇층에 있는지 정리
+        if (stage_Floor.Length >= 2 && this.transform.position.y > stage_Floor[1] && this.transform.position.y < stage_Floor[2])
+        {
+            stair_Floor = 1;
+        }
+        else if (stage_Floor.Length >= 3 && this.transform.position.y > stage_Floor[2] && this.transform.position.y < stage_Floor[3])
+        {
+            stair_Floor = 2;
+        }
+        else if (stage_Floor.Length >= 4 && this.transform.position.y > stage_Floor[3] && this.transform.position.y < stage_Floor[4])
+            stair_Floor = 3;
+
+        if (stage_Floor.Length >= 2 && this.transform.position.y == stage_Floor[1])
+            ch_Stair = 1;
+        else if (stage_Floor.Length >= 3 && this.transform.position.y == stage_Floor[2])
+            ch_Stair = 2;
+        else if (stage_Floor.Length >= 4 && this.transform.position.y == stage_Floor[3])
+            ch_Stair = 3;
+        else if (stage_Floor.Length >= 5 && this.transform.position.y == stage_Floor[4])
+            ch_Stair = 4;
+
+        bool check = true;
+        while (true)
+        {
+            //캐릭터가 벽과 충돌 여부
+            if (isWall)
+                CheckDoor(coll_Obj);
+            
+            //캐릭터가 벽과 충돌시 이동 중지
+            if (trigger)
+            {
+                StopMove();
+                SoundManager.instance.MoveStop(); // 사운드 발생
+                trigger = false;
+                break;
+            }
+            
+            
+            if (stage_Floor.Length >= 2 && this.transform.position.y == stage_Floor[1])
+                ch_Stair = 1;
+            else if (stage_Floor.Length >= 3 && this.transform.position.y == stage_Floor[2])
+                ch_Stair = 2;
+            else if (stage_Floor.Length >= 4 && this.transform.position.y == stage_Floor[3])
+                ch_Stair = 3;
+            else if (stage_Floor.Length >= 5 && this.transform.position.y == stage_Floor[4])
+                ch_Stair = 4;
+
+            //현재 캐릭터가 계단이 아닐경우
+            if (stair_Floor != 0)
+            {
+                //가야 할 경우
+                if (stair_Floor >= move_Stair)
+                {
+                    //현재위치에서 가장 가까운 계단이 어디인지 확인
+                    if (check)
+                    {
+                        nearDown = CheckNearStair_Down(stair_Floor, ch_Stair);
+                        check = false;
+                    }
+                    isDownStair = true;
+                    moveCtrl_Point = stair_Down_V[nearDown].x;
+                    Move_Ch(stair_Down_V[nearDown].x, stage_Floor[stair_Floor]); // 캐릭터 이동
+                    
+                    //가장가까운 계단의 아랫부분에 도착했을시 
+                    if (this.transform.position == new Vector3(stair_Down_V[nearDown].x, stage_Floor[stair_Floor]))
+                    {
+                        stair_Floor = 0;
+                        isDownStair = false;
+                        check = true;
+                    }
+                }
+                
+                //내려가야할 경우
+                else if (stair_Floor < move_Stair)
+                {
+                    //현재위치에서 가장 가까운 계단이 어디인지 확인
+                    if (check)
+                    {
+                        nearUp = CheckNearStair_Up(stair_Floor, ch_Stair);
+                        check = false;
+                    }
+                    isUpStair = true;
+                    moveCtrl_Point = stair_Up_V[nearUp].x;
+                    Move_Ch(stair_Up_V[nearUp].x, stage_Floor[stair_Floor + 1]); // 캐릭터 이동
+                    
+                    //가장가까운 계단의 윗부분에 도착했을시 
+                    if (this.transform.position == new Vector3(stair_Up_V[nearUp].x, stage_Floor[stair_Floor + 1]))
+                    {
+                        stair_Floor = 0;
+                        isUpStair = false;
+                        check = true;
+                    }
+                }
+            }
+            
+            //캐릭터가 계단인 경우
+            //올라가기
+            else if (move_Stair > ch_Stair)
+            {
+                
+                if (!stair && stair_Floor == 0)
+                {
+                    //현재위치에서 가장 가까운 계단이 어디인지 확인
+                    if (check)
+                    {
+                        nearDown = CheckNearStair_Down(stair_Floor, ch_Stair);
+                        check = false;
+                    }
+                    moveCtrl_Point = stair_Down_V[nearDown].x;
+                    Move_Ch(stair_Down_V[nearDown].x, stage_Floor[ch_Stair]); // 캐릭터 이동
+                    
+                    //가장가까운 계단의 아랫부분에 도착했을시 
+                    if (this.transform.position == new Vector3(stair_Down_V[nearDown].x, this.transform.position.y))
+                    {
+                        stair = true;
+                        check = true;
+                    }
+                }
+                
+                //계단타기
+                else if (stair && stair_Floor == 0)
+                {
+                    if (check)
+                    {
+                        nearDown = CheckNearStair_Down(stair_Floor, ch_Stair);
+                        check = false;
+                    }
+                    isUpStair = true;
+                    moveCtrl_Point = stair_Up_V[nearDown].x;
+                    Move_Ch(stair_Up_V[nearDown].x, stage_Floor[ch_Stair + 1]); // 캐릭터 이동
+                    if (this.transform.position == new Vector3(stair_Up_V[nearDown].x, stage_Floor[ch_Stair + 1]))
+                    {
+                        stair = false;
+                        isUpStair = false;
+                        check = true;
+                    }
+                }
+            }
+            //내려가기
+            else if (move_Stair < ch_Stair)
+            {
+                //가까운 윗 계단 이동
+                if (!stair && stair_Floor == 0)
+                {
+                    if (check)
+                    {
+                        nearUp = CheckNearStair_Up(stair_Floor, ch_Stair);
+                        check = false;
+                    }
+                    moveCtrl_Point = stair_Up_V[nearUp].x;
+                    Move_Ch(stair_Up_V[nearUp].x, stage_Floor[ch_Stair]);
+                    if (this.transform.position == new Vector3(stair_Up_V[nearUp].x, this.transform.position.y))
+                    {
+                        stair = true;
+                        check = true;
+                    }
+                }
+                //계단타기
+                else if (stair && stair_Floor == 0)
+                {
+                    if (check)
+                    {
+                        nearUp = CheckNearStair_Up(stair_Floor, ch_Stair);
+                        check = false;
+                    }
+                    isDownStair = true;
+                    moveCtrl_Point = stair_Down_V[nearUp].x;
+                    Move_Ch(stair_Down_V[nearUp].x, stage_Floor[ch_Stair - 1]);
+                    if (this.transform.position == new Vector3(stair_Down_V[nearUp].x, stage_Floor[ch_Stair - 1]))
+                    {
+                        stair = false;
+                        isDownStair = false;
+                        check = true;
+                    }
+                }
+            }
+            
+            //이동하기
+            else if (move_Stair == ch_Stair)
+            {
+                if (stair_Floor == 0)
+                {
+                    moveCtrl_Point = move_X;
+                    Move_Ch(move_X, stage_Floor[ch_Stair]);
+                    
+                    //캐릭터가 포인터 지점에 도착
+                    if (this.transform.position == new Vector3(move_X, stage_Floor[ch_Stair], 0))
+                    {
+                        body_Anim.SetBool("isStop", true);
+                        body_Anim.SetBool("isMove", false);
+                        isMove = false;
+                        GetComponent<Skill_Ctrl>().isCloseDoor = false;
+                        Pointer.SetActive(false);
+                        SoundManager.instance.MoveStop(); // 사운드 발생
+                        //body_Anim.SetBool("isCarry",false);
+                        //clothes_Anim.SetBool("isStop", true);
+                        //clothes_Anim.SetBool("isMove", false);
+                        break;
+                    }
+                }
+            }
+            yield return new WaitForSeconds(0.001f);
+        }
+        yield return null;
+    }
+
+    //캐릭터 이동 메소드
+    private void Move_Ch(float x, float y)
+    {
+        moveCtrl_Point = x;
+        
+        //캐릭터가 오른쪽을 볼 때
+        if (this.transform.localScale.x >= 0 && this.transform.position.x >= x)
+        {
+            this.transform.localScale = new Vector2(-this.transform.localScale.x, this.transform.localScale.y);
+        }
+
+        //캐릭터가 왼쪽을 볼 때
+        else if (this.transform.localScale.x < 0 && this.transform.position.x < x)
+        {
+            this.transform.localScale = new Vector2(-this.transform.localScale.x, this.transform.localScale.y);
+        }
+        
+        //캐릭터 달리기 여부
+        if (body_Anim.GetBool("isRun"))
+            this.transform.position = Vector2.MoveTowards(this.transform.position, new Vector3(x, y), Time.deltaTime * move_Speed_Run);
+
+        else if (!body_Anim.GetBool("isRun"))
+            this.transform.position = Vector2.MoveTowards(this.transform.position, new Vector3(x, y), Time.deltaTime * move_Speed_Walk);
+    }
+
+    //암살 애니메이션
+    public void Assassin_Anim()
+    {
+        StopAllCoroutines();
+        body_Anim.SetBool("isStop", true);
+        body_Anim.SetBool("isMove", false);
+        body_Anim.SetTrigger("isAttack");
+        SoundManager.instance.MoveStop(); // 사운드 발생
+    }
+
+    //시체운반
+    public void MoveBody_Anim()
+    {
+        StopAllCoroutines();
+        body_Anim.SetBool("isStop", false);
+        body_Anim.SetBool("isMove", true);
+        body_Anim.SetBool("isCarry", true);
+        SoundManager.instance.MoveStop(); // 사운드 발생
+    }
+
+    //이동 중지
+    public void StopMove()
+    {
+        StopAllCoroutines();
+        body_Anim.SetBool("isStop", true);
+        body_Anim.SetBool("isMove", false);
+        SoundManager.instance.MoveStop(); // 사운드 발생
+    }
+
+    //문 충돌
+    private void CheckDoor(GameObject Wall)
+    {
+        //오른쪽으로 갈때
+        if (Wall.transform.position.x - transform.position.x > 0) // 현재 위치가 왼쪽
+        {
+            if (moveCtrl_Point - transform.position.x > 0) // 오른쪽으로 이동
+                trigger = true;
+
+            else if (moveCtrl_Point - transform.position.x < 0) // 왼쪽으로 이동
+                trigger = false;
+        }
+        //왼쪽으로 갈때
+        else if (Wall.transform.position.x - transform.position.x < 0) // 현재 위치가 오른쪽
+        {
+            if (moveCtrl_Point - transform.position.x < 0) // 오른쪽으로 이동
+                trigger = true;
+
+            else if (moveCtrl_Point - transform.position.x > 0) // 왼쪽으로 이동
+                trigger = false;
+        }
+    }
+
+    private void OnTriggerEnter2D(Collider2D coll)
+    {
+        //외벽
+        if (coll.CompareTag("StageWall"))
+        {
+            isWall = true;
+            coll_Obj = coll.gameObject;
+        }
+        
+        //웅덩이
+        else if (coll.CompareTag("WaterPull"))
+        {
+            move_Speed_Run = 100;
+            move_Speed_Walk = 50;
+            SoundManager.instance.InToWaterPull();
+        }
+    }
+
+    private void OnTriggerStay2D(Collider2D coll)
+    {
+        //옆문이 닫혀있을 때
+        if (coll.CompareTag("SideDoor") && !coll.GetComponent<SideDoor_Ctrl>().open)
+        {
+            isWall = true;
+            coll_Obj = coll.gameObject;
+        }
+        
+        //옆문이 열려있을 때
+        if (coll.CompareTag("SideDoor") && coll.GetComponent<SideDoor_Ctrl>().open)
+        {
+            isWall = false;
+            coll_Obj = coll.gameObject;
+        }
+    }
+
+    private void OnTriggerExit2D(Collider2D coll)
+    {
+        //변수값 
+        if (coll.CompareTag("StageWall"))
+        {
+            isWall = false;
+            coll_Obj = null;
+        }
+
+        else if (coll.CompareTag("SideDoor"))
+        {
+            isWall = false;
+            coll_Obj = null;
+        }
+
+        else if (coll.CompareTag("WaterPull"))
+        {
+            move_Speed_Run = 200;
+            move_Speed_Walk = 100;
+            SoundManager.instance.OutToWaterPull();
+        }
+    }
+
+    //가장 가까운 계단의 하단부 찾기
+    private int CheckNearStair_Down(int stair_Floor, int ch_Stair)
+    {
+        int nearDown = -1;
+        for (int i = 0; i < stair_Down_V.Length; i++)
+        {
+            if (stair_Floor == 0 && stair_Down_V[i].y == ch_Stair)
+            {
+                if (nearDown == -1)
+                {
+                    nearDown = i;
+                    continue;
+                }
+                else if (Mathf.Abs(this.transform.position.x - stair_Down_V[nearDown].x) > Mathf.Abs(this.transform.position.x - stair_Down_V[i].x))
+                {
+                    nearDown = i;
+                }
+            }
+            else if (stair_Floor != 0 && stair_Up_V[i].y == stair_Floor)
+            {
+                if (nearDown == -1)
+                {
+                    nearDown = i;
+                    continue;
+                }
+                else if (Mathf.Abs(this.transform.position.x - stair_Down_V[nearDown].x) > Mathf.Abs(this.transform.position.x - stair_Down_V[i].x))
+                {
+                    nearDown = i;
+                }
+            }
+        }
+        return nearDown;
+    }
+
+    //가장 가까운 계단의 상단부 찾기
+    private int CheckNearStair_Up(int stair_Floor, int ch_Stair)
+    {
+        int nearUp = -1;
+        for (int i = 0; i < stair_Up_V.Length; i++)
+        {
+            if (stair_Floor == 0 && stair_Up_V[i].y == ch_Stair - 1)
+            {
+                if (nearUp == -1)
+                {
+                    nearUp = i;
+                    continue;
+                }
+                else if (Mathf.Abs(this.transform.position.x - stair_Up_V[nearUp].x) > Mathf.Abs(this.transform.position.x - stair_Up_V[i].x))
+                {
+                    nearUp = i;
+                }
+            }
+            else if (stair_Floor != 0 && stair_Up_V[i].y == stair_Floor)
+            {
+                if (nearUp == -1)
+                {
+                    nearUp = i;
+                    continue;
+                }
+                else if (Mathf.Abs(this.transform.position.x - stair_Up_V[nearUp].x) > Mathf.Abs(this.transform.position.x - stair_Up_V[i].x))
+                {
+                    nearUp = i;
+                }
+            }
+            //Debug.Log(nearUp);
+        }
+        return nearUp;
+    }
+}
